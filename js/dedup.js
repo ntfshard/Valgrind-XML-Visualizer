@@ -32,6 +32,7 @@ export class ErrorDeduplicator {
           key,
           count: 0,
           threads: new Set(),
+          threadNames: new Set(),
           primary: err,
           instances: []
         });
@@ -40,13 +41,17 @@ export class ErrorDeduplicator {
       const group = groupsMap.get(key);
       group.count++;
       group.threads.add(err.tid);
+      if (err.threadName) {
+        group.threadNames.add(err.threadName);
+      }
       group.instances.push(err);
     });
 
     // Convert to array and format thread list
     return Array.from(groupsMap.values()).map(group => ({
       ...group,
-      threads: Array.from(group.threads).sort((a, b) => a - b)
+      threads: Array.from(group.threads).sort((a, b) => a - b),
+      threadNames: Array.from(group.threadNames)
     }));
   }
 

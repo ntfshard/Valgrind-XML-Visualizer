@@ -1,17 +1,65 @@
 /**
  * Valgrind XML Parser
  * Zero dependencies - relies exclusively on browser native DOMParser.
+ * Includes sanitization for real-world Valgrind output quirks:
+ * - Premature </valgrindoutput> (e.g. child threads logging after main thread exits)
+ * - Multiple root elements or concatenated XML logs
+ * - XML 1.0 illegal control characters
+ * - Truncated closing tags
  */
 
 export class ValgrindParser {
+  /**
+   * Sanitize Valgrind XML string to repair structural anomalies before parsing
+   * @param {string} rawXml
+   * @returns {string} Sanitized valid XML string
+   */
+  static sanitizeXml(rawXml) {
+    if (!rawXml) return '';
+
+    // 1. Strip XML 1.0 illegal control characters (keep \t, \n, \r)
+    let clean = rawXml.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+
+    // 2. Remove redundant XML declarations (e.g. if multiple processes/runs were concatenated)
+    clean = clean.replace(/(<\?xml[^>]*\?>\s*)+/g, (match, offset) => {
+      return offset === 0 ? '<?xml version="1.0"?>\n' : '';
+    });
+
+    // 3. Handle premature </valgrindoutput> tags (e.g. child threads logged errors after main process output closed):
+    // Keep only the final </valgrindoutput> at the end of the document.
+    const lastCloseIdx = clean.lastIndexOf('</valgrindoutput>');
+    if (lastCloseIdx !== -1) {
+      const beforeLast = clean.substring(0, lastCloseIdx).replace(/<\/valgrindoutput>/g, '');
+      clean = beforeLast + clean.substring(lastCloseIdx);
+    }
+
+    // 4. Handle multiple opening <valgrindoutput> tags:
+    const firstOpenIdx = clean.indexOf('<valgrindoutput>');
+    if (firstOpenIdx !== -1) {
+      const afterFirst = clean.substring(firstOpenIdx + 16).replace(/<valgrindoutput>/g, '');
+      clean = clean.substring(0, firstOpenIdx + 16) + afterFirst;
+    } else {
+      // In case the opening tag was missing
+      clean = `<valgrindoutput>\n${clean}\n</valgrindoutput>`;
+    }
+
+    // 5. Ensure the document terminates with </valgrindoutput> (e.g. truncated/killed runs)
+    if (!clean.includes('</valgrindoutput>')) {
+      clean += '\n</valgrindoutput>';
+    }
+
+    return clean;
+  }
+
   /**
    * Parse Valgrind XML string into a structured report object.
    * @param {string} xmlString 
    * @returns {Object} Report model
    */
   static parse(xmlString) {
+    const sanitizedXml = this.sanitizeXml(xmlString);
     const parser = new DOMParser();
-    const doc = parser.parseFromString(xmlString, 'text/xml');
+    const doc = parser.parseFromString(sanitizedXml, 'text/xml');
 
     // Check for parse errors
     const parserError = doc.querySelector('parsererror');
@@ -40,7 +88,7 @@ export class ValgrindParser {
     let totalLeakedBlocks = 0;
 
     errorNodes.forEach((errNode, idx) => {
-      const err = this.parseError(errNode, idx);
+      const err = this.parseError(errNode, idx, tool);
       if (err.leakedBytes) {
         totalLeakedBytes += err.leakedBytes;
       }
@@ -81,9 +129,11 @@ export class ValgrindParser {
     return '';
   }
 
-  static parseError(errorNode, index) {
+  static parseError(errorNode, index, tool = '') {
     const unique = this.getText(errorNode, 'unique') || `0x${index.toString(16)}`;
-    const tid = parseInt(this.getText(errorNode, 'tid') || '1', 10);
+    const rawTid = this.getText(errorNode, 'tid') || this.getText(errorNode, 'hthreadid') || '1';
+    const tid = parseInt(rawTid, 10);
+    const threadName = this.getText(errorNode, 'threadname') || '';
     const kind = this.getText(errorNode, 'kind') || 'UnknownError';
 
     // What message
@@ -100,7 +150,7 @@ export class ValgrindParser {
       if (lblocks) leakedBlocks = parseInt(lblocks, 10);
     }
 
-    // Children iteration to associate <auxwhat> with subsequent <stack>
+    // Children iteration to associate <auxwhat>/<annwhat> with subsequent <stack>
     let primaryStack = null;
     const auxiliary = [];
     let currentAux = null;
@@ -141,8 +191,9 @@ export class ValgrindParser {
       id: `err-${index}-${unique}`,
       unique,
       tid,
+      threadName,
       kind,
-      category: this.categorizeKind(kind),
+      category: this.categorizeKind(kind, tool),
       what: what || kind,
       leakedBytes,
       leakedBlocks,
@@ -210,7 +261,7 @@ export class ValgrindParser {
     return false;
   }
 
-  static categorizeKind(kind) {
+  static categorizeKind(kind, tool = '') {
     if (kind.startsWith('Leak_')) {
       return 'leak';
     }
@@ -220,7 +271,9 @@ export class ValgrindParser {
     if (['UninitCondition', 'UninitValue', 'SyscallParam'].includes(kind)) {
       return 'uninitialized';
     }
-    if (['Race', 'LockOrder', 'PossibleDataRace', 'Misc'].includes(kind)) {
+    if (['Race', 'LockOrder', 'PossibleDataRace', 'Dubious', 'Misc'].includes(kind) || 
+        tool.toLowerCase().includes('helgrind') || 
+        tool.toLowerCase().includes('drd')) {
       return 'concurrency';
     }
     return 'other';

@@ -21,6 +21,8 @@ class App {
     };
     this.dedupEnabled = true;
     this.hideSystemFrames = false;
+    this.currentPage = 1;
+    this.pageSize = 50;
 
     // Cache DOM Elements
     this.dropZone = document.getElementById('dropZone');
@@ -36,6 +38,8 @@ class App {
     this.themeToggle = document.getElementById('themeToggle');
     this.summaryContainer = document.getElementById('summaryContainer');
     this.errorContainer = document.getElementById('errorContainer');
+    this.paginationTop = document.getElementById('paginationTop');
+    this.paginationBottom = document.getElementById('paginationBottom');
 
     this.init();
   }
@@ -82,6 +86,7 @@ class App {
       debounceTimer = setTimeout(() => {
         this.activeCriteria.fileFilter = this.filterFile.value;
         this.activeCriteria.fnFilter = this.filterFn.value;
+        this.currentPage = 1;
         this.render();
       }, 150);
     };
@@ -92,12 +97,14 @@ class App {
     // Kind filter
     this.filterKind.addEventListener('change', (e) => {
       this.activeCriteria.kindFilter = e.target.value;
+      this.currentPage = 1;
       this.render();
     });
 
     // Deduplication toggle
     this.dedupToggle.addEventListener('change', (e) => {
       this.dedupEnabled = e.target.checked;
+      this.currentPage = 1;
       this.recomputeDeduplication();
       this.render();
     });
@@ -111,6 +118,7 @@ class App {
     // User code only toggle
     this.userCodeToggle.addEventListener('change', (e) => {
       this.activeCriteria.userCodeOnly = e.target.checked;
+      this.currentPage = 1;
       this.render();
     });
 
@@ -126,6 +134,7 @@ class App {
         kindFilter: 'all',
         userCodeOnly: false
       };
+      this.currentPage = 1;
       this.render();
     });
 
@@ -196,6 +205,7 @@ class App {
     try {
       this.currentReport = ValgrindParser.parse(xmlString);
       this.rawErrors = this.currentReport.errors;
+      this.currentPage = 1;
       this.populateKindFilterOptions();
       this.recomputeDeduplication();
       this.render();
@@ -248,6 +258,17 @@ class App {
 
     // Apply active filter pipeline
     const filteredGroups = ErrorFilter.apply(this.dedupGroups, this.activeCriteria);
+    const totalItems = filteredGroups.length;
+
+    // Calculate pagination
+    const totalPages = this.pageSize === 'all' ? 1 : Math.max(1, Math.ceil(totalItems / this.pageSize));
+    if (this.currentPage > totalPages) {
+      this.currentPage = totalPages;
+    }
+
+    const pageGroups = this.pageSize === 'all'
+      ? filteredGroups
+      : filteredGroups.slice((this.currentPage - 1) * this.pageSize, this.currentPage * this.pageSize);
 
     // Render Summary dashboard
     UIRenderer.renderSummary(
@@ -257,8 +278,41 @@ class App {
       this.dedupGroups.length
     );
 
-    // Render Error Cards
-    UIRenderer.renderErrorList(this.errorContainer, filteredGroups, {
+    // Render Pagination (Top & Bottom)
+    const onPageChange = (newPage) => {
+      this.currentPage = newPage;
+      this.render();
+      window.scrollTo({ top: this.summaryContainer.offsetTop - 10, behavior: 'smooth' });
+    };
+
+    const onPageSizeChange = (newSize) => {
+      this.pageSize = newSize;
+      this.currentPage = 1;
+      this.render();
+    };
+
+    UIRenderer.renderPagination(
+      this.paginationTop,
+      this.currentPage,
+      totalPages,
+      totalItems,
+      this.pageSize,
+      onPageChange,
+      onPageSizeChange
+    );
+
+    UIRenderer.renderPagination(
+      this.paginationBottom,
+      this.currentPage,
+      totalPages,
+      totalItems,
+      this.pageSize,
+      onPageChange,
+      onPageSizeChange
+    );
+
+    // Render Error Cards for current page
+    UIRenderer.renderErrorList(this.errorContainer, pageGroups, {
       hideSystem: this.hideSystemFrames
     });
   }

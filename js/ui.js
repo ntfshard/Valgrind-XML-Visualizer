@@ -92,10 +92,58 @@ export class UIRenderer {
     this.attachCardListeners(container);
   }
 
+  static renderPagination(container, currentPage, totalPages, totalItems, pageSize, onPageChange, onPageSizeChange) {
+    if (!container) return;
+    if (totalItems === 0) {
+      container.innerHTML = '';
+      container.style.display = 'none';
+      return;
+    }
+
+    container.style.display = 'flex';
+    const isFirst = currentPage <= 1;
+    const isLast = currentPage >= totalPages;
+
+    const startIdx = (currentPage - 1) * (pageSize === 'all' ? totalItems : pageSize) + 1;
+    const endIdx = pageSize === 'all' ? totalItems : Math.min(currentPage * pageSize, totalItems);
+
+    container.innerHTML = `
+      <div class="pagination-info">
+        Showing <strong>${startIdx}–${endIdx}</strong> of <strong>${totalItems}</strong>
+      </div>
+      <div class="pagination-controls">
+        <button class="btn btn-sm btn-prev" ${isFirst ? 'disabled' : ''}>← Previous</button>
+        <span class="page-indicator">Page ${currentPage} of ${totalPages}</span>
+        <button class="btn btn-sm btn-next" ${isLast ? 'disabled' : ''}>Next →</button>
+        <div class="page-size-selector">
+          <label>Per page:</label>
+          <select class="btn btn-sm select-page-size">
+            <option value="50" ${pageSize == 50 ? 'selected' : ''}>50</option>
+            <option value="100" ${pageSize == 100 ? 'selected' : ''}>100</option>
+            <option value="250" ${pageSize == 250 ? 'selected' : ''}>250</option>
+            <option value="all" ${pageSize === 'all' ? 'selected' : ''}>All</option>
+          </select>
+        </div>
+      </div>
+    `;
+
+    container.querySelector('.btn-prev')?.addEventListener('click', () => {
+      if (currentPage > 1) onPageChange(currentPage - 1);
+    });
+    container.querySelector('.btn-next')?.addEventListener('click', () => {
+      if (currentPage < totalPages) onPageChange(currentPage + 1);
+    });
+    container.querySelector('.select-page-size')?.addEventListener('change', (e) => {
+      const val = e.target.value === 'all' ? 'all' : parseInt(e.target.value, 10);
+      onPageSizeChange(val);
+    });
+  }
+
   static renderErrorCard(group, index, options) {
     const err = group.primary;
     const count = group.count;
-    const threads = group.threads;
+    const threads = group.threads || [];
+    const threadNames = group.threadNames || [];
     const cardId = `card-${index}`;
 
     // Color code category class
@@ -115,6 +163,20 @@ export class UIRenderer {
     const countBadge = count > 1
       ? `<span class="count-badge" title="Occurred ${count} times across threads [${threads.join(', ')}]">× ${count}</span>`
       : '';
+
+    // Thread tag display
+    let tidTag = '';
+    if (threads.length > 0) {
+      const threadStr = threads.length > 5 
+        ? `${threads.slice(0, 5).join(', ')}... (+${threads.length - 5})` 
+        : threads.join(', ');
+
+      const namesStr = threadNames.length > 0
+        ? ` (${threadNames.slice(0, 2).join(', ')}${threadNames.length > 2 ? '...' : ''})`
+        : '';
+
+      tidTag = `<span class="tid-tag" title="Thread IDs: ${threads.join(', ')}">TID: ${this.escapeHtml(threadStr + namesStr)}</span>`;
+    }
 
     // Render primary call stack
     const primaryStackHtml = this.renderStack(err.primaryStack, 'Primary Stack Trace', options);
@@ -150,7 +212,7 @@ export class UIRenderer {
             <span class="error-msg">${this.escapeHtml(err.what)}</span>
           </div>
           <div class="header-right">
-            ${threads.length > 0 ? `<span class="tid-tag" title="Thread IDs">TID: ${threads.join(', ')}</span>` : ''}
+            ${tidTag}
           </div>
         </div>
 
