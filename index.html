@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Valgrind XML Visualizer</title>
+  <meta name="description" content="A minimalist, client-side, zero-dependency visualizer and filter for Valgrind XML reports.">
+  <link rel="stylesheet" href="./css/styles.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-title-group">
+        <h1>Valgrind XML Visualizer</h1>
+        <div class="subtitle">Client-side inspection, filtering &amp; deduplication for Memcheck, Helgrind &amp; DRD</div>
+      </div>
+      <div class="header-actions">
+        <button id="themeToggle" class="btn btn-sm" aria-label="Toggle dark/light mode">☀ Light</button>
+      </div>
+    </header>
+
+    <!-- Upload & File Select Section -->
+    <section class="upload-panel">
+      <div id="dropZone" class="drop-zone" tabindex="0" role="button" aria-label="Upload Valgrind XML Report">
+        <div class="drop-title">Drop your Valgrind XML file here, or click to browse</div>
+        <p>Supports reports generated with <code>valgrind --xml=yes --xml-file=report.xml</code></p>
+        <input type="file" id="fileInput" accept=".xml,text/xml" style="display: none;">
+      </div>
+
+      <div class="sample-bar">
+        <span>Or explore built-in samples:</span>
+        <select id="sampleSelect" class="btn btn-sm">
+          <option value="memcheck">Memcheck (Memory Leaks &amp; Corruptions)</option>
+          <option value="helgrind">Helgrind (Data Race &amp; Lock Inversion)</option>
+        </select>
+      </div>
+    </section>
+
+    <!-- Filter & Deduplication Controls -->
+    <section class="filter-panel" aria-label="Filter Controls">
+      <div class="filter-row-inputs">
+        <div class="input-field">
+          <label for="filterFile">Filter by Filename / Path</label>
+          <input type="text" id="filterFile" placeholder="e.g. order_processor.cpp, /db/">
+        </div>
+
+        <div class="input-field">
+          <label for="filterFn">Filter by Function</label>
+          <input type="text" id="filterFn" placeholder="e.g. validate_items, malloc">
+        </div>
+
+        <div class="input-field">
+          <label for="filterKind">Error Kind</label>
+          <select id="filterKind">
+            <option value="all">All Categories &amp; Kinds</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="filter-row-toggles">
+        <div class="toggle-group">
+          <label class="checkbox-label" title="Group repeated identical stack traces and display occurrence counts">
+            <input type="checkbox" id="dedupToggle" checked>
+            <span>Deduplicate Errors</span>
+          </label>
+
+          <label class="checkbox-label" title="Dim or collapse standard library frames like libc, libstdc++, ld-linux">
+            <input type="checkbox" id="hideSystemToggle">
+            <span>Dim / Hide System Frames</span>
+          </label>
+
+          <label class="checkbox-label" title="Only display errors containing user source files">
+            <input type="checkbox" id="userCodeToggle">
+            <span>User Code Only</span>
+          </label>
+        </div>
+
+        <button id="btnClearFilters" class="btn btn-sm">Reset Filters</button>
+      </div>
+    </section>
+
+    <!-- Report Summary Dashboard -->
+    <section id="summaryContainer" class="summary-panel" aria-live="polite"></section>
+
+    <!-- Error Cards List -->
+    <main id="errorContainer" class="error-list" aria-live="polite">
+      <!-- Cards rendered dynamically by js/ui.js -->
+    </main>
+  </div>
+
+  <!-- Notification Toast -->
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <!-- App Entrypoint -->
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>
